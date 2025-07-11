@@ -5,6 +5,19 @@ import logging
 from tkinter import messagebox
 from datetime import datetime
 from system_info_utils import get_hardware_info
+from multiprocessing import Pool
+import psutil
+
+def benchmark_task(chunk_size):
+    """งาน benchmark สำหรับแต่ละ process"""
+    np.random.seed(int(time.time() % 10000))
+    matrix_size = 1000
+    input_data = np.random.rand(matrix_size, matrix_size)
+    weights = np.random.rand(matrix_size, matrix_size)
+    for _ in range(chunk_size):
+        result = np.dot(input_data, weights)
+        input_data = result
+    return result.sum()
 
 def start_benchmark(self):
     if self.is_benchmarking:
@@ -35,16 +48,29 @@ def run_stress_test(self, duration):
     try:
         logging.info(f"Starting benchmark for {duration} seconds")
         end_time = time.time() + duration
+        max_cores = psutil.cpu_count(logical=False)  # จำนวน physical cores
+        num_cores = max_cores  # ใช้ทุกคอร์
+        iterations = 100  # จำนวนรอบต่อ process
 
-        while time.time() < end_time and self.is_benchmarking:
-            np.random.rand(1000, 1000).dot(np.random.rand(1000, 1000))
-            _ = [np.random.bytes(1024*1024) for _ in range(100)]
-            time.sleep(0.1)
+        # แบ่งงานให้แต่ละคอร์
+        chunk_size = iterations // num_cores
+        chunks = [chunk_size] * num_cores
+        remaining = iterations % num_cores
+        for i in range(remaining):
+            chunks[i] += 1
 
-        # ดึงข้อมูลฮาร์ดแวร์ (ใช้จาก self.hardware_info ที่มีอยู่แล้ว)
+        # รัน benchmark ด้วย multiprocessing
+        with Pool(processes=num_cores) as pool:
+            while time.time() < end_time and self.is_benchmarking:
+                pool.starmap(benchmark_task, [(chunk,) for chunk in chunks])
+                # จำลองการใช้หน่วยความจำ
+                _ = [np.random.bytes(1024*1024) for _ in range(100)]
+                time.sleep(0.1)
+
+        # ดึงข้อมูลฮาร์ดแวร์
         hardware_info = self.hardware_info if hasattr(self, 'hardware_info') else get_hardware_info(self)
 
-        # บันทึกผลลงฐานข้อมูลพร้อมข้อมูลฮาร์ดแวร์
+        # บันทึกผลลงฐานข้อมูล
         self.db.save_benchmark(
             self.benchmark_data['cpu_max'],
             self.benchmark_data['gpu_max'],
