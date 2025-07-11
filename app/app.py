@@ -4,8 +4,9 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# MongoDB Atlas connection
-MONGODB_URI = "mongodb+srv://suphakron:suphacode2547@chinadic.d2nau3b.mongodb.net/?retryWrites=true&w=majority&appName=ChinaDic"
+# MongoDB Atlas connection (use environment variable for security)
+import os
+MONGODB_URI = os.environ.get('MONGODB_URI')
 client = MongoClient(MONGODB_URI)
 db = client["system-moniter"]
 collection = db["process"]
