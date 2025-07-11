@@ -1,109 +1,76 @@
-import sqlite3
-from datetime import datetime
+import requests
+import logging
+
+API_URL = "http://localhost:5000/submit"  # เปลี่ยนเป็น URL ที่ deploy จริง
 
 class SystemMonitorDB:
-    def __init__(self, db_name="system_monitor.db"):
-        self.db_name = db_name
-        self.create_tables()
+    def __init__(self):
+        logging.debug("SystemMonitorDB now uses API, no local DB init.")
 
-    def create_tables(self):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        
-        # ตาราง system_logs
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS system_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                cpu_percent REAL,
-                gpu_percent REAL,
-                ram_percent REAL,
-                storage_percent REAL
-            )
-        ''')
+    def insert_benchmark_log(self, test_type, total_time, avg_score, device, mode, cpu_brand=None, cpu_info=None, scores_dict=None):
+        # Get GPU info (prefer NVIDIA if available)
+        gpu_brand = None
+        gpu_model = None
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+            import wmi
+            c = wmi.WMI()
+            gpu_list = c.Win32_VideoController()
+            nvidia_gpu = None
+            for gpu in gpu_list:
+                name = gpu.Name
+                if "NVIDIA" in name.upper():
+                    nvidia_gpu = gpu
+                    break
+            if nvidia_gpu:
+                gpu_model = nvidia_gpu.Name
+                gpu_brand = "NVIDIA"
+            elif gpu_list:
+                gpu_model = gpu_list[0].Name
+                if "INTEL" in gpu_model.upper():
+                    gpu_brand = "Intel"
+                elif "AMD" in gpu_model.upper():
+                    gpu_brand = "AMD"
+                else:
+                    gpu_brand = "Unknown"
+        except Exception as gpu_e:
+            logging.warning(f"Cannot get GPU info: {gpu_e}")
 
-        # ตาราง benchmarks
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS benchmarks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                cpu_max REAL,
-                gpu_max REAL,
-                memory_max REAL,
-                duration INTEGER,
-                notes TEXT,
-                cpu_brand TEXT,
-                gpu_brand TEXT,
-                ram_brand TEXT,
-                storage_brand TEXT,
-                mainboard TEXT
-            )
-        ''')
+        # Get RAM info
+        ram_gb = None
+        try:
+            import psutil
+            ram_gb = int(psutil.virtual_memory().total / (1024**3))
+        except Exception as ram_e:
+            logging.warning(f"Cannot get RAM info: {ram_e}")
 
-        # ตารางtest_results
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS test_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                test_type TEXT,
-                device TEXT,
-                test_name TEXT,
-                score REAL,
-                elapsed_time REAL
-            )
-        ''')
-
-        conn.commit()
-        conn.close()
-
-    def save_system_log(self, cpu_percent, gpu_percent, ram_percent, storage_percent):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        timestamp = datetime.now().isoformat()
-        cursor.execute('''
-            INSERT INTO system_logs (timestamp, cpu_percent, gpu_percent, ram_percent, storage_percent)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (timestamp, cpu_percent, gpu_percent, ram_percent, storage_percent))
-        conn.commit()
-        conn.close()
-
-    def save_benchmark(self, cpu_max, gpu_max, memory_max, duration, notes, 
-                       cpu_brand, gpu_brand, ram_brand, storage_brand, mainboard):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        timestamp = datetime.now().isoformat()
-        cursor.execute('''
-            INSERT INTO benchmarks (timestamp, cpu_max, gpu_max, memory_max, duration, notes, 
-                                   cpu_brand, gpu_brand, ram_brand, storage_brand, mainboard)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (timestamp, cpu_max, gpu_max, memory_max, duration, notes, 
-              cpu_brand, gpu_brand, ram_brand, storage_brand, mainboard))
-        conn.commit()
-        conn.close()
-
-    def save_test_result(self, test_type, device, test_name, score, elapsed_time):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        timestamp = datetime.now().isoformat()
-        cursor.execute('''
-            INSERT INTO test_results (timestamp, test_type, device, test_name, score, elapsed_time)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (timestamp, test_type, device, test_name, score, elapsed_time))
-        conn.commit()
-        conn.close()
-
-    def get_recent_benchmarks(self, limit=20):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM benchmarks ORDER BY timestamp DESC LIMIT ?', (limit,))
-        results = cursor.fetchall()
-        conn.close()
-        return results
-
-    def get_test_results(self, limit=20):
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM test_results ORDER BY timestamp DESC LIMIT ?', (limit,))
-        results = cursor.fetchall()
-        conn.close()
-        return results
+        # Prepare data for API
+        data = {
+            "model_name": device,
+            "cpu_brand": cpu_brand,
+            "cpu_model": cpu_info,
+            "gpu_brand": gpu_brand,
+            "gpu_model": gpu_model,
+            "ram_gb": ram_gb,
+            "test_details": {
+                "test_type": test_type,
+                "mode": mode,
+                "total_time": total_time,
+                "avg_score": avg_score,
+                "scores": scores_dict
+            }
+        }
+        try:
+            response = requests.post(API_URL, json=data, timeout=10)
+            response.raise_for_status()
+            result = response.json()
+            if result.get('status') == 'ok':
+                logging.info("Benchmark data sent to API successfully.")
+                return True
+            else:
+                logging.error(f"API error: {result.get('message')}")
+                return False
+        except Exception as e:
+            logging.error(f"Error sending data to API: {e}")
+            return False
