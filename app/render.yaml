@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: system-monitor-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: PORT
+        value: 5000 

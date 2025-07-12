@@ -1,7 +1,7 @@
 import requests
 import logging
 
-API_URL = "http://localhost:5000/submit"  # เปลี่ยนเป็น URL ที่ deploy จริง
+API_URL = "https://system-moniter.onrender.com/submit"  # ใช้ชื่อที่สะกดผิดตาม Render จริง
 
 class SystemMonitorDB:
     def __init__(self):
@@ -62,7 +62,8 @@ class SystemMonitorDB:
             }
         }
         try:
-            response = requests.post(API_URL, json=data, timeout=10)
+            logging.info(f"Sending data to API: {API_URL}")
+            response = requests.post(API_URL, json=data, timeout=30)
             response.raise_for_status()
             result = response.json()
             if result.get('status') == 'ok':
@@ -71,6 +72,12 @@ class SystemMonitorDB:
             else:
                 logging.error(f"API error: {result.get('message')}")
                 return False
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"Connection error to API: {e}")
+            return False
+        except requests.exceptions.Timeout as e:
+            logging.error(f"Timeout error to API: {e}")
+            return False
         except Exception as e:
             logging.error(f"Error sending data to API: {e}")
             return False
