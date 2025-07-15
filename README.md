@@ -115,3 +115,8 @@ DowloadApp = https://drive.google.com/drive/folders/1Jt0X3aQGnthqU02CQEn7YiOwGiq
   > Output Layer: ให้ผลลัพธ์สุดท้าย เช่น คำตอบว่า "หมา" หรือ "แมว"
   
   > แต่ละชั้นประกอบด้วย “Neurons” (หน่วยย่อยคล้ายเซลล์ประสาท) ซึ่งเชื่อมกันด้วย "น้ำหนัก" (Weights)
+
+# Tool
+PYTHON (scikit-learn,make_classification,numpy,matplotlib,pandas)
+FLASK (Restfull-api,connect MongoDB)
+render.com (Web Service , Static Site)
