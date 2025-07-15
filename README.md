@@ -117,6 +117,6 @@ DowloadApp = https://drive.google.com/drive/folders/1Jt0X3aQGnthqU02CQEn7YiOwGiq
   > แต่ละชั้นประกอบด้วย “Neurons” (หน่วยย่อยคล้ายเซลล์ประสาท) ซึ่งเชื่อมกันด้วย "น้ำหนัก" (Weights)
 
 # Tool
-PYTHON (scikit-learn,make_classification,numpy,matplotlib,pandas)
-FLASK (Restfull-api,connect MongoDB)
-render.com (Web Service , Static Site)
+1. PYTHON (scikit-learn,make_classification,numpy,matplotlib,pandas)
+2. FLASK (Restfull-api,connect MongoDB)
+3. render.com (Web Service , Static Site)
