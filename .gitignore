@@ -1,0 +1,5 @@
+echo "build/system_monitor/system_monitor.pkg" >> .gitignore
+echo "dist/system_monitor.exe" >> .gitignore
+echo "build/system_monitor/PYZ-00.pyz" >> .gitignore
+echo "build/" >> .gitignore
+echo "dist/" >> .gitignore
