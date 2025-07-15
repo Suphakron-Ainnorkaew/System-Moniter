@@ -1,0 +1,30 @@
+{
+  "single": {
+    "Neural Network": 0.24075078964233398,
+    "Image Recognition": 1.3594639301300049,
+    "Natural Language": 1.3717925548553467,
+    "Data Classification": 0.1390068531036377,
+    "Clustering": 0.34333276748657227
+  },
+  "multi": {
+    "Neural Network": 0.2735025882720947,
+    "Data Classification": 0.14386510848999023,
+    "Clustering": 1.3388252258300781,
+    "Natural Language": 2.0525054931640625,
+    "Image Recognition": 3.1993660926818848
+  },
+  "threaded": {
+    "Neural Network": 0.3001101016998291,
+    "Data Classification": 0.14798831939697266,
+    "Clustering": 1.4358925819396973,
+    "Natural Language": 1.9635250568389893,
+    "Image Recognition": 3.174783945083618
+  },
+  "multiprocessing": {
+    "Neural Network": 1.7735135555267334,
+    "Image Recognition": 6.222177028656006,
+    "Natural Language": 22.53761053085327,
+    "Data Classification": 0.8941946029663086,
+    "Clustering": 0.6545867919921875
+  }
+}

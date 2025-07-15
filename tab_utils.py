@@ -37,6 +37,11 @@ class TabUtils:
         self.test_results = {}
         logging.debug("TabUtils initialized")
         self.setup_styles()
+        # สร้าง device_var (StringVar) สำหรับแต่ละ test_type ใน master (singleton)
+        if not hasattr(master, 'ai_test_device'):
+            master.ai_test_device = tk.StringVar(value="CPU")
+        if not hasattr(master, 'pg_test_device'):
+            master.pg_test_device = tk.StringVar(value="CPU")
 
     def setup_styles(self):
         try:
@@ -102,15 +107,18 @@ class TabUtils:
         
         ttk.Label(center_frame, text="Device:", font=('Segoe UI', 9)).pack(side='left', padx=(0, 5))
         
-        device_var = getattr(self.master, f'{test_type}_test_device', None)
-        if not device_var:
-            device_var = tk.StringVar(value="CPU")
-            setattr(self.master, f'{test_type}_test_device', device_var)
-        
+        # ใช้ device_var จาก master เสมอ (singleton)
+        device_var = getattr(self.master, f'{test_type}_test_device')
+        print(f"DEBUG: create_inline_controls device_var id={id(device_var)}, value={device_var.get()}")
+        def on_device_change(event=None):
+            print(f"DEBUG: device_var changed to {device_var.get()}")
+        # ปรับให้ program test (pg) เลือกได้ทั้ง CPU/GPU
+        device_values = ["CPU", "GPU"]
         device_combo = ttk.Combobox(center_frame, textvariable=device_var,
-                                    values=["CPU", "GPU"] if test_type == "ai" else ["CPU"],
+                                    values=device_values,
                                     state='readonly', width=8, font=('Segoe UI', 8))
         device_combo.pack(side='left', padx=(0, 15))
+        device_combo.bind('<<ComboboxSelected>>', on_device_change)
         
         ttk.Label(center_frame, text="Mode:", font=('Segoe UI', 9)).pack(side='left', padx=(0, 5))
         
@@ -225,7 +233,15 @@ class TabUtils:
                 ax2 = fig.add_subplot(122)
                 ax2.bar(modes, avg_scores, color='#e67e22')
                 ax2.set_title('Average Score by Mode')
-                ax2.set_ylabel('Average Score (%)')
+                ax2.set_ylabel('Average Score')
+                max_score = max(avg_scores) if avg_scores else 200
+                y_max = max(200, min(2000, max_score * 1.1 + 10))
+                ax2.set_ylim(0, y_max)
+                for i, v in enumerate(avg_scores):
+                    label_y = max(v + y_max*0.01, v + 0.05*y_max)
+                    print(f"DEBUG: label at x={i}, y={label_y}, score={v}")
+                    ax2.text(i, label_y, f'{v:.1f}', ha='center', fontsize=12, color='black', zorder=10, bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+
                 fig.tight_layout()
                 canvas = FigureCanvasTkAgg(fig, master=window)
                 canvas.draw()
@@ -382,6 +398,13 @@ class TabUtils:
             logging.debug(f"Starting {test_type} test")
             mode = getattr(self, f'{test_type}_test_mode', tk.StringVar(value="single")).get()
             output_widget = getattr(self, f'{test_type}_result_text', None)
+            self.master.root.update_idletasks()
+            # ใช้ device_var จาก master เสมอ (singleton)
+            device_var = getattr(self.master, f'{test_type}_test_device')
+            print(f"DEBUG: start_test device_var id={id(device_var)}, value={device_var.get() if device_var else None}")
+            device_type = device_var.get().lower() if device_var else "cpu"
+            print(f"DEBUG: device_type for start_tests = {device_type}")
+            print(f"DEBUG: test_type = {test_type}, mode = {mode}")
             if output_widget:
                 output_widget.delete(1.0, tk.END)
                 output_widget.insert(tk.END, f"Starting {test_type.upper()} test in {mode} mode...\n")
@@ -399,7 +422,7 @@ class TabUtils:
                         output_widget.see(tk.END)
 
             from test_utils import start_tests
-            start_tests(self, test_type, mode, output_widget, callback=on_tests_complete)
+            start_tests(self, test_type, mode, output_widget, callback=on_tests_complete, device_type=device_type)
 
         except Exception as e:
             logging.error(f"Error starting {test_type} test: {str(e)}")
@@ -494,6 +517,15 @@ class TabUtils:
                 ax.grid(True, linestyle='--', alpha=0.3)
                 ax.set_facecolor('#f8f9fa')
                 fig.tight_layout()
+
+                # Dynamic y-axis for line chart
+                all_scores = []
+                for mode in modes:
+                    results = self.test_results.get(f"ai_{mode}", {})
+                    all_scores += [results.get(name, {"score": 0})["score"] for name in test_configs]
+                max_score = max(all_scores) if all_scores else 200
+                y_max = max(200, min(2000, max_score * 1.1 + 10))
+                ax.set_ylim(0, y_max)
 
                 canvas.draw()
 
@@ -664,21 +696,17 @@ class TabUtils:
 
                 bars2 = ax2.bar(range(len(test_names)), scores, color=score_colors, alpha=0.8, edgecolor='white', linewidth=1)
                 ax2.set_title('Performance Score', fontsize=12, fontweight='bold', pad=15)
-                ax2.set_ylabel('Score (%)', fontsize=10)
+                ax2.set_ylabel('Score', fontsize=10)
                 ax2.set_xticks(range(len(test_names)))
                 ax2.set_xticklabels(short_names, fontsize=10, ha='center')
-                ax2.set_ylim(0, 110)
-                ax2.grid(True, axis='y', linestyle='--', alpha=0.3)
-                ax2.set_facecolor('#f8f9fa')
-                for bar, score in zip(bars2, scores):
-                    height = bar.get_height()
-                    ax2.text(bar.get_x() + bar.get_width()/2., height + 2, 
-                            f'{score:.1f}%', ha='center', va='bottom', fontsize=8)
+                # Professional: Limit y-axis, show outlier, warn for abnormal baseline
+                max_score = max(scores) if scores else 200
+                y_max = max(200, min(2000, max_score * 1.1 + 10))
+                ax2.set_ylim(0, y_max)
 
                 avg_score = sum(scores) / len(scores) if scores else 0
                 ax2.axhline(y=avg_score, color='red', linestyle='--', alpha=0.7, linewidth=1.5)
-                ax2.text(len(test_names)-0.5, avg_score + 5, f'Avg: {avg_score:.1f}%', 
-                        color='red', fontsize=9, ha='right')
+                ax2.text(len(test_names)-0.5, avg_score + 5, f'Avg: {avg_score:.1f}', color='red', fontsize=9, ha='right')
 
                 fig.suptitle(f'{test_type.upper()} Performance Results ({mode.capitalize()})', fontsize=14, fontweight='bold', y=0.95)
                 fig.subplots_adjust(left=0.08, right=0.95, top=0.85, bottom=0.15, wspace=0.3)
@@ -688,15 +716,34 @@ class TabUtils:
                 max_score = max(scores) if scores else 0
                 min_score = min(scores) if scores else 0
 
+                # Baseline outlier warning
+                baseline_warning = ''
+                try:
+                    import json
+                    with open('baseline.json', 'r', encoding='utf-8') as f:
+                        baseline_data = json.load(f)
+                    for i, name in enumerate(test_names):
+                        base_time = baseline_data.get(name)
+                        if base_time is not None and base_time < 0.05:
+                            baseline_warning += f'Baseline for "{name}" is very low ({base_time:.3f}s): Score may be unreliable.\n'
+                except Exception:
+                    pass
+
                 stats_text = (f"Summary Statistics:\n"
-                            f"Total Time: {total_time:.2f}s\n"
-                            f"Average Time: {avg_time:.2f}s\n"
-                            f"Best Score: {max_score:.1f}%\n"
-                            f"Lowest Score: {min_score:.1f}%\n"
-                            f"Tests Completed: {len(test_names)}/{len(test_order)}")
+                              f"Total Time: {total_time:.2f}s\n"
+                              f"Average Time: {avg_time:.2f}s\n"
+                              f"Best Score: {max_score:.1f}\n"
+                              f"Lowest Score: {min_score:.1f}\n"
+                              f"Tests Completed: {len(test_names)}/{len(test_order)}" + ("\n" + baseline_warning if baseline_warning else ""))
                 fig.text(0.02, 0.02, stats_text, fontsize=9, 
                         bbox=dict(boxstyle="round", facecolor="white", alpha=0.9, edgecolor="gray"),
                         verticalalignment='bottom')
+
+                for bar, score in zip(bars2, scores):
+                    height = bar.get_height()
+                    label_y = max(height + y_max*0.01, height + 0.05*y_max)
+                    print(f"DEBUG: label at x={bar.get_x() + bar.get_width()/2.}, y={label_y}, score={score}")
+                    ax2.text(bar.get_x() + bar.get_width()/2., label_y, f'{score:.1f}', ha='center', va='bottom', fontsize=12, color='black', zorder=10, bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
                 canvas.draw()
 
@@ -705,7 +752,9 @@ class TabUtils:
                     output_widget.insert(tk.END, f"\nResults displayed in new window for {mode} mode\n")
                     output_widget.insert(tk.END, f"Completed {len(test_names)} tests\n")
                     output_widget.insert(tk.END, f"Total time: {total_time:.2f}s\n")
-                    output_widget.insert(tk.END, f"Average score: {avg_score:.2f}%\n")
+                    output_widget.insert(tk.END, f"Average score: {avg_score:.2f}\n")
+                    if baseline_warning:
+                        output_widget.insert(tk.END, f"{baseline_warning}")
                     if len(test_names) < len(test_order):
                         output_widget.insert(tk.END, f"Warning: Only {len(test_names)}/{len(test_order)} tests completed\n")
                     output_widget.see(tk.END)

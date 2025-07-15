@@ -33,14 +33,14 @@ def submit():
             return jsonify({'status': 'error', 'message': 'No JSON data provided'}), 400
 
         # Validate required fields
-        required = ['model_name', 'cpu_brand', 'cpu_model', 'gpu_brand', 'gpu_model', 'ram_gb']
+        required = ['test_device_type', 'cpu_brand', 'cpu_model', 'gpu_brand', 'gpu_model', 'ram_gb']
         for field in required:
             if field not in data:
                 return jsonify({'status': 'error', 'message': f'Missing field: {field}'}), 400
 
         # Prepare document
         doc = {
-            'model_name': data['model_name'],         # ชื่อรุ่นที่ใช้ทดสอบ
+            'test_device_type': data['test_device_type'], # ประเภทอุปกรณ์ที่ใช้ทดสอบ (CPU/GPU)
             'cpu_brand': data['cpu_brand'],           # ยี่ห้อ CPU
             'cpu_model': data['cpu_model'],           # รุ่น CPU
             'gpu_brand': data['gpu_brand'],           # ยี่ห้อ GPU

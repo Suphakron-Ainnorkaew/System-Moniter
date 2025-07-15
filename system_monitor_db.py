@@ -1,5 +1,6 @@
 import requests
 import logging
+from datetime import datetime
 
 API_URL = "https://system-moniter.onrender.com/submit"  # ใช้ชื่อที่สะกดผิดตาม Render จริง
 
@@ -47,7 +48,7 @@ class SystemMonitorDB:
 
         # Prepare data for API
         data = {
-            "model_name": device,
+            "test_device_type": device,
             "cpu_brand": cpu_brand,
             "cpu_model": cpu_info,
             "gpu_brand": gpu_brand,

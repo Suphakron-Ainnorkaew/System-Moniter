@@ -9,6 +9,7 @@ import psutil
 import traceback
 import tkinter as tk
 import matplotlib
+import tkinter.messagebox as msgbox
 import multiprocessing
 from multiprocessing import Pool, Manager
 from sklearn.datasets import make_classification
@@ -19,6 +20,9 @@ from sklearn.metrics import accuracy_score
 import numpy as np
 import os
 import sys
+import json
+
+BASELINE_FILE = "baseline.json"
 
 def resource_path(relative_path):
     try:
@@ -50,7 +54,7 @@ def simulate_neural_network(mode="single"):
     try:
         start_time = time.time()
         X, y = make_classification(n_samples=1000, n_features=20, n_informative=10, random_state=42)
-        clf = MLPClassifier(hidden_layer_sizes=(50,), max_iter=100, random_state=42)
+        clf = MLPClassifier(hidden_layer_sizes=(50,), max_iter=200, random_state=42)
         clf.fit(X, y)
         elapsed_time = time.time() - start_time
         score = min(100 / (elapsed_time + 0.1) * 5, 100)
@@ -71,7 +75,7 @@ def simulate_image_recognition(mode="single"):
         X = np.random.rand(num_samples, img_size, img_size, 3)
         y = np.random.randint(0, num_classes, num_samples)
         X_flat = X.reshape(num_samples, -1)
-        clf = MLPClassifier(hidden_layer_sizes=(50,), max_iter=100, random_state=42)
+        clf = MLPClassifier(hidden_layer_sizes=(50,), max_iter=200, random_state=42)
         clf.fit(X_flat, y)
         elapsed_time = time.time() - start_time
         score = min(100 / (elapsed_time + 0.1) * 5, 100)
@@ -90,7 +94,7 @@ def simulate_natural_language(mode="single"):
         vocab_size = 5000
         X = np.random.rand(num_samples, vocab_size)
         y = np.random.randint(0, 2, num_samples)
-        clf = MLPClassifier(hidden_layer_sizes=(50,), max_iter=100, random_state=42)
+        clf = MLPClassifier(hidden_layer_sizes=(50,), max_iter=200, random_state=42)
         clf.fit(X, y)
         elapsed_time = time.time() - start_time
         score = min(100 / (elapsed_time + 0.1) * 5, 100)
@@ -117,7 +121,7 @@ def simulate_data_classification(mode="single"):
         )
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
-        clf = MLPClassifier(hidden_layer_sizes=(50,), max_iter=100, random_state=42)
+        clf = MLPClassifier(hidden_layer_sizes=(50,), max_iter=200, random_state=42)
         clf.fit(X_scaled, y)
         y_pred = clf.predict(X_scaled)
         accuracy = accuracy_score(y, y_pred)
@@ -134,10 +138,10 @@ def simulate_clustering(mode="single"):
     logging.debug(f"Starting {simulate_clustering.__name__} in {mode} mode")
     try:
         start_time = time.time()
-        X, _ = make_classification(n_samples=1000, n_features=20, n_informative=10, random_state=42)
+        X, _ = make_classification(n_samples=5000, n_features=50, n_informative=25, random_state=42)
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
-        kmeans = KMeans(n_clusters=4, random_state=42)
+        kmeans = KMeans(n_clusters=10, n_init=10, random_state=42)
         kmeans.fit(X_scaled)
         elapsed_time = time.time() - start_time
         score = min(100 / (elapsed_time + 0.1) * 5, 100)
@@ -271,7 +275,42 @@ def run_test_local(args):
         result_list.append((test_name, 0, 0, error_msg))
         return 0, 0
 
-def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
+def get_baseline_file(device_type, test_type):
+    # AI test: ใช้ cpubaseline.json/gpubaseline.json, PG test: ใช้ cpuplbaseline.json/gpuplbaseline.json
+    if test_type == "ai":
+        return "gpubaseline.json" if device_type == "gpu" else "cpubaseline.json"
+    elif test_type == "pg":
+        return "gpuplbaseline.json" if device_type == "gpu" else "cpuplbaseline.json"
+    else:
+        return "baseline.json"
+
+def load_baseline(device_type="cpu", mode="single", test_type="ai"):
+    baseline_file = get_baseline_file(device_type, test_type)
+    if os.path.exists(baseline_file):
+        with open(baseline_file, "r", encoding="utf-8") as f:
+            all_baseline = json.load(f)
+            return all_baseline.get(mode, {})
+    return {}
+
+def save_baseline(baseline, device_type="cpu", mode="single", test_type="ai"):
+    baseline_file = get_baseline_file(device_type, test_type)
+    all_baseline = {}
+    if os.path.exists(baseline_file):
+        with open(baseline_file, "r", encoding="utf-8") as f:
+            all_baseline = json.load(f)
+    all_baseline[mode] = baseline
+    print(f"DEBUG: save_baseline to {baseline_file} for mode={mode}")
+    print(f"DEBUG: baseline keys now: {list(all_baseline.keys())}")
+    with open(baseline_file, "w", encoding="utf-8") as f:
+        json.dump(all_baseline, f, indent=2)
+
+def calculate_baseline_score(test_name, elapsed_time, baseline):
+    base_time = baseline.get(test_name)
+    if base_time is None or elapsed_time <= 0:
+        return 100.0  # Default score if no baseline or invalid time
+    return (base_time / elapsed_time) * 100
+
+def start_tests(tab_utils, test_type, mode, output_widget, callback=None, device_type="cpu"):
     logging.debug(f"Starting {test_type} tests in {mode} mode")
     try:
         root = tab_utils.master.root
@@ -283,16 +322,19 @@ def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
         for test_name, test_data in tests.items():
             root.after(0, lambda td=test_data: td["progress"].configure(value=0))
             root.after(0, lambda td=test_data: td["time"].configure(text="Time: 0.00s"))
-            root.after(0, lambda td=test_data: td["score"].configure(text="Score: 0%"))
+            root.after(0, lambda td=test_data: td["score"].configure(text="Score: 0"))
 
         stop_event = threading.Event()
         monitor_thread = threading.Thread(target=monitor_resources, args=(output_widget, stop_event, root), daemon=True)
         monitor_thread.start()
 
+        baseline = load_baseline(device_type, mode, test_type)
+
         def run_all_tests():
+            baseline_updated = False  # ป้องกัน UnboundLocalError
             try:
-                results = {}  # ใช้ dict ปกติ
-                result_list = []  # ใช้ list ปกติ
+                results = {}
+                result_list = []
                 processed_tests = set()
 
                 test_functions = {
@@ -317,19 +359,27 @@ def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
                     proc = psutil.Process()
                     proc.cpu_affinity([0])
 
-
                 if mode == "single":
                     for test_name in test_functions[test_type].keys():
                         if test_name in tests:
                             test_func = test_functions[test_type][test_name]
-                            elapsed_time, score = run_test_local((test_func, test_name, results, result_list, mode))
+                            elapsed_time, _ = run_test_local((test_func, test_name, results, result_list, mode))
+                            # Baseline logic
+                            if test_name not in baseline or baseline[test_name] <= 0:
+                                baseline[test_name] = elapsed_time
+                                baseline_updated = True
+                                score = 100.0
+                                root.after(0, lambda msg=f"[BASELINE] {test_name}: Time = {elapsed_time:.2f}s set as baseline.\n": output_widget.insert(tk.END, msg))
+                            else:
+                                score = calculate_baseline_score(test_name, elapsed_time, baseline)
                             test_data = tests[test_name]
                             root.after(0, lambda td=test_data: td["progress"].configure(value=100))
-                            root.after(0, lambda msg=f"{test_name}: Time = {elapsed_time:.2f}s, Score = {score:.2f}%\n": output_widget.insert(tk.END, msg))
+                            root.after(0, lambda msg=f"{test_name}: Time = {elapsed_time:.2f}s, Score = {score:.2f}\n": output_widget.insert(tk.END, msg))
                             root.after(0, lambda td=test_data, t=elapsed_time: td["time"].configure(text=f"Time: {t:.2f}s"))
-                            root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}%"))
+                            root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}"))
                             root.after(0, lambda: tab_utils.update_test_progress(test_type, test_name, elapsed_time, score))
                             processed_tests.add(test_name)
+                            results[test_name] = {"time": elapsed_time, "score": score}
 
                 elif mode == "multi" or mode == "threaded":
                     threads = []
@@ -349,32 +399,44 @@ def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
 
                     for result in result_list:
                         if len(result) == 4:
-                            test_name, elapsed_time, score, error = result
+                            test_name, elapsed_time, _, error = result
                             if test_name not in processed_tests and test_name in tests:
                                 test_data = tests[test_name]
+                                if test_name not in baseline or baseline[test_name] <= 0:
+                                    baseline[test_name] = elapsed_time
+                                    baseline_updated = True
+                                    score = 100.0
+                                    root.after(0, lambda msg=f"[BASELINE] {test_name}: Time = {elapsed_time:.2f}s set as baseline.\n": output_widget.insert(tk.END, msg))
+                                else:
+                                    score = calculate_baseline_score(test_name, elapsed_time, baseline)
                                 root.after(0, lambda msg=f"{test_name}: {error}\n": output_widget.insert(tk.END, msg))
                                 root.after(0, lambda td=test_data: td["progress"].configure(value=0))
                                 root.after(0, lambda td=test_data, t=elapsed_time: td["time"].configure(text=f"Time: {t:.2f}s"))
-                                root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}%"))
+                                root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}"))
                                 root.after(0, lambda: tab_utils.update_test_progress(test_type, test_name, elapsed_time, score))
                                 processed_tests.add(test_name)
                                 results[test_name] = {"time": elapsed_time, "score": score}
                         else:
-                            test_name, elapsed_time, score = result
+                            test_name, elapsed_time, _ = result
                             if test_name not in processed_tests and test_name in tests:
                                 test_data = tests[test_name]
+                                if test_name not in baseline or baseline[test_name] <= 0:
+                                    baseline[test_name] = elapsed_time
+                                    baseline_updated = True
+                                    score = 100.0
+                                    root.after(0, lambda msg=f"[BASELINE] {test_name}: Time = {elapsed_time:.2f}s set as baseline.\n": output_widget.insert(tk.END, msg))
+                                else:
+                                    score = calculate_baseline_score(test_name, elapsed_time, baseline)
                                 root.after(0, lambda td=test_data: td["progress"].configure(value=100))
-                                root.after(0, lambda msg=f"{test_name}: Time = {elapsed_time:.2f}s, Score = {score:.2f}%\n": output_widget.insert(tk.END, msg))
+                                root.after(0, lambda msg=f"{test_name}: Time = {elapsed_time:.2f}s, Score = {score:.2f}\n": output_widget.insert(tk.END, msg))
                                 root.after(0, lambda td=test_data, t=elapsed_time: td["time"].configure(text=f"Time: {t:.2f}s"))
-                                root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}%"))
+                                root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}"))
                                 root.after(0, lambda: tab_utils.update_test_progress(test_type, test_name, elapsed_time, score))
                                 processed_tests.add(test_name)
                                 results[test_name] = {"time": elapsed_time, "score": score}
                         root.after(0, lambda: output_widget.see(tk.END))
 
-
                 elif mode == "multiprocessing":
-                    # Multiprocessing: use only pickle-able args, collect results, update GUI in main thread
                     try:
                         multiprocessing.set_start_method('spawn', force=True)
                     except RuntimeError:
@@ -393,31 +455,44 @@ def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
                         root.after(0, lambda: output_widget.see(tk.END))
                         mp_results = []
 
-                    # Always print results to output_widget for user feedback
                     if not mp_results:
                         root.after(0, lambda: output_widget.insert(tk.END, "No results returned from multiprocessing.\n"))
                         root.after(0, lambda: output_widget.see(tk.END))
 
                     for result in mp_results:
                         if len(result) == 4:
-                            test_name, elapsed_time, score, error = result
+                            test_name, elapsed_time, _, error = result
                             if test_name not in processed_tests and test_name in tests:
                                 test_data = tests[test_name]
+                                if test_name not in baseline or baseline[test_name] <= 0:
+                                    baseline[test_name] = elapsed_time
+                                    baseline_updated = True
+                                    score = 100.0
+                                    root.after(0, lambda msg=f"[BASELINE] {test_name}: Time = {elapsed_time:.2f}s set as baseline.\n": output_widget.insert(tk.END, msg))
+                                else:
+                                    score = calculate_baseline_score(test_name, elapsed_time, baseline)
                                 root.after(0, lambda msg=f"{test_name}: {error}\n": output_widget.insert(tk.END, msg))
                                 root.after(0, lambda td=test_data: td["progress"].configure(value=0))
                                 root.after(0, lambda td=test_data, t=elapsed_time: td["time"].configure(text=f"Time: {t:.2f}s"))
-                                root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}%"))
+                                root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}"))
                                 root.after(0, lambda: tab_utils.update_test_progress(test_type, test_name, elapsed_time, score))
                                 processed_tests.add(test_name)
                                 results[test_name] = {"time": elapsed_time, "score": score}
                         else:
-                            test_name, elapsed_time, score = result
+                            test_name, elapsed_time, _ = result
                             if test_name not in processed_tests and test_name in tests:
                                 test_data = tests[test_name]
+                                if test_name not in baseline or baseline[test_name] <= 0:
+                                    baseline[test_name] = elapsed_time
+                                    baseline_updated = True
+                                    score = 100.0
+                                    root.after(0, lambda msg=f"[BASELINE] {test_name}: Time = {elapsed_time:.2f}s set as baseline.\n": output_widget.insert(tk.END, msg))
+                                else:
+                                    score = calculate_baseline_score(test_name, elapsed_time, baseline)
                                 root.after(0, lambda td=test_data: td["progress"].configure(value=100))
-                                root.after(0, lambda msg=f"{test_name}: Time = {elapsed_time:.2f}s, Score = {score:.2f}%\n": output_widget.insert(tk.END, msg))
+                                root.after(0, lambda msg=f"{test_name}: Time = {elapsed_time:.2f}s, Score = {score:.2f}\n": output_widget.insert(tk.END, msg))
                                 root.after(0, lambda td=test_data, t=elapsed_time: td["time"].configure(text=f"Time: {t:.2f}s"))
-                                root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}%"))
+                                root.after(0, lambda td=test_data, s=score: td["score"].configure(text=f"Score: {s:.2f}"))
                                 root.after(0, lambda: tab_utils.update_test_progress(test_type, test_name, elapsed_time, score))
                                 processed_tests.add(test_name)
                                 results[test_name] = {"time": elapsed_time, "score": score}
@@ -433,7 +508,7 @@ def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
                         test_data = tests[test_name]
                         root.after(0, lambda td=test_data: td["progress"].configure(value=0))
                         root.after(0, lambda td=test_data: td["time"].configure(text="Time: 0.00s"))
-                        root.after(0, lambda td=test_data: td["score"].configure(text="Score: 0%"))
+                        root.after(0, lambda td=test_data: td["score"].configure(text="Score: 0"))
                         root.after(0, lambda: tab_utils.update_test_progress(test_type, test_name, 0, 0))
                         results[test_name] = {"time": 0, "score": 0}
 
@@ -445,18 +520,36 @@ def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
                 total_time = sum(data["time"] for data in valid_results.values())
                 avg_score = sum(data["score"] for data in valid_results.values()) / len(valid_results) if valid_results else 0
 
-                logging.debug(f"Results: {results}, Total Time: {total_time:.2f}s, Avg Score: {avg_score:.2f}%")
+                logging.debug(f"Results: {results}, Total Time: {total_time:.2f}s, Avg Score: {avg_score:.2f}")
                 tab_utils.test_results[f"{test_type}_{mode}"] = dict(valid_results)
 
                 root.after(0, lambda: output_widget.insert(tk.END, f"\n{test_type.upper()} tests ({mode}) completed!\n"))
                 root.after(0, lambda: output_widget.insert(tk.END, f"Total Time: {total_time:.2f}s\n"))
-                root.after(0, lambda: output_widget.insert(tk.END, f"Average Score: {avg_score:.2f}%\n"))
+                root.after(0, lambda: output_widget.insert(tk.END, f"Average Score: {avg_score:.2f}\n"))
                 root.after(0, lambda: output_widget.see(tk.END))
 
+                # --- Pop-up Alert: แจ้งเตือนความเหมาะสม ---
+                # ใช้ค่าเฉลี่ย ratio ของทุก test ในโหมดนั้น
+                ratios = []
+                for test_name, data in valid_results.items():
+                    base_time = baseline.get(test_name)
+                    test_time = data["time"]
+                    if base_time and test_time > 0:
+                        ratios.append(base_time / test_time)
+                if ratios:
+                    avg_ratio = sum(ratios) / len(ratios)
+                    if avg_ratio < 0.2:
+                        msg = f"ผลการทดสอบ {test_type.upper()} ({mode}):\n\nไม่เหมาะสมสำหรับงาน AI/Program\n\n(ช้ากว่า baseline {1/avg_ratio:.1f} เท่า)"
+                        root.after(0, lambda: msgbox.showerror("Performance Alert", msg))
+                    elif 0.2 <= avg_ratio < 0.25:
+                        msg = f"ผลการทดสอบ {test_type.upper()} ({mode}):\n\nความเหมาะสมปานกลาง\n\n(เร็วกว่า baseline {avg_ratio:.2f} เท่า)"
+                        root.after(0, lambda: msgbox.showwarning("Performance Alert", msg))
+                    else:
+                        msg = f"ผลการทดสอบ {test_type.upper()} ({mode}):\n\nเหมาะสมเป็นอย่างมากสำหรับงาน AI/Program\n\n(เร็วกว่า baseline {avg_ratio:.2f} เท่า)"
+                        root.after(0, lambda: msgbox.showinfo("Performance Alert", msg))
 
                 try:
                     device = tab_utils.master.ai_test_device.get() if test_type == "ai" else tab_utils.master.pg_test_device.get()
-                    # ดึงข้อมูล CPU
                     cpu_brand = None
                     cpu_info = None
                     try:
@@ -469,7 +562,6 @@ def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
                             cpu_info = cpu_list[0].Name
                     except Exception as cpu_e:
                         logging.warning(f"Cannot get CPU info: {cpu_e}")
-                    # เก็บคะแนนแต่ละ test ลง db (scores_dict)
                     scores_dict = {k: v for k, v in valid_results.items()}
                     tab_utils.db.insert_benchmark_log(
                         test_type, total_time, avg_score, device, mode,
@@ -484,11 +576,16 @@ def start_tests(tab_utils, test_type, mode, output_widget, callback=None):
                 if callback and callable(callback):
                     root.after(0, lambda: callback())
 
+                if baseline_updated:
+                    save_baseline(baseline, device_type, mode, test_type)
+
             except Exception as e:
                 error_msg = f"Error in run_all_tests: {str(e)}\n{traceback.format_exc()}"
                 logging.error(error_msg)
                 root.after(0, lambda msg=f"Error: {str(e)}\n": output_widget.insert(tk.END, msg))
                 root.after(0, lambda: output_widget.see(tk.END))
+            if baseline_updated:
+                save_baseline(baseline, device_type, mode, test_type)
 
         test_thread = threading.Thread(target=run_all_tests, daemon=True)
         test_thread.start()

@@ -1,0 +1,30 @@
+{
+  "single": {
+    "Matrix Multiplication": 0.010897159576416016,
+    "File Operations": 0.033858537673950195,
+    "String Processing": 0.05340409278869629,
+    "Data Sorting": 0.04143476486206055,
+    "Image Processing": 0.007050752639770508
+  },
+  "multi": {
+    "File Operations": 0.03259730339050293,
+    "String Processing": 0.05902552604675293,
+    "Data Sorting": 0.04242086410522461,
+    "Image Processing": 0.0045773983001708984,
+    "Matrix Multiplication": 0.15654540061950684
+  },
+  "threaded": {
+    "File Operations": 0.03325986862182617,
+    "String Processing": 0.05958867073059082,
+    "Data Sorting": 0.04109382629394531,
+    "Image Processing": 0.006516933441162109,
+    "Matrix Multiplication": 0.15969324111938477
+  },
+  "multiprocessing": {
+    "Matrix Multiplication": 1.3829607963562012,
+    "File Operations": 0.0642402172088623,
+    "String Processing": 0.41178393363952637,
+    "Data Sorting": 0.04844403266906738,
+    "Image Processing": 0.0035004615783691406
+  }
+}
