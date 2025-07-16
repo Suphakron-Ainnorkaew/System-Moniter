@@ -19,7 +19,7 @@
 5. Clustering -> simulate_clustering ->	KMeans ->	ไม่มี label ใช้การจัดกลุ่ม
 
 # Dowload System Monitor App
-DowloadApp = https://drive.google.com/drive/folders/1Jt0X3aQGnthqU02CQEn7YiOwGiq8Fj9M?usp=sharing
+DowloadApp = https://drive.google.com/drive/folders/1zx7ZW2VzMThAmwDMC8A41NCT0kHla6wb?usp=sharing
 
 1. ดาวโหลดผ่าน link ด้านบน กด dowload ผ่านdriveของท่าน ท่านจะได้รับ zip file เป็น system monitor2
 2. เมื่อแตกไฟล์ กดคลิกเข้าไปจะพบ folder dist กดเข้าไปอีกครั้ง จะพบ system-monitor.exe
